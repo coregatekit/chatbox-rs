@@ -1,14 +1,53 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
+use wasm_bindgen::JsCast;
+use wasm_bindgen::prelude::*;
+use web_sys::{Document, HtmlElement, HtmlInputElement, MessageEvent, WebSocket};
+
+#[wasm_bindgen(start)]
+pub fn start() -> Result<(), JsValue> {
+    let ws = WebSocket::new("ws://127.0.0.1:8080")?;
+    let document = get_document();
+
+    // โซนแสดงผลข้อความ
+    let messages = document.get_element_by_id("messages").unwrap();
+
+    // --- จัดการเมื่อได้รับข้อความจาก server ---
+    let messages_clone = messages.clone();
+    let onmessage_callback = Closure::<dyn FnMut(_)>::new(move |event: MessageEvent| {
+        if let Ok(txt) = event.data().dyn_into::<js_sys::JsString>() {
+            let msg_div = document.create_element("div").unwrap();
+            msg_div.set_inner_html(&format!("📩 {}", txt));
+            messages_clone.append_child(&msg_div).unwrap();
+        }
+    });
+    ws.set_onmessage(Some(onmessage_callback.as_ref().unchecked_ref()));
+    onmessage_callback.forget();
+
+    // --- ปุ่มส่งข้อความ ---
+    let ws_clone = ws.clone();
+    let document = get_document();
+    let send_button = document.get_element_by_id("send").unwrap();
+    let input_box: HtmlInputElement = document
+        .get_element_by_id("msg_input")
+        .unwrap()
+        .dyn_into()
+        .unwrap();
+
+    let onclick = Closure::<dyn FnMut()>::new(move || {
+        let text = input_box.value();
+        if !text.is_empty() {
+            ws_clone.send_with_str(&text).unwrap();
+            input_box.set_value("");
+        }
+    });
+    send_button
+        .dyn_ref::<HtmlElement>()
+        .unwrap()
+        .set_onclick(Some(onclick.as_ref().unchecked_ref()));
+    onclick.forget();
+
+    Ok(())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
+fn get_document() -> Document {
+    web_sys::window().unwrap().document().unwrap()
 }
